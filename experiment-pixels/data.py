@@ -9,6 +9,7 @@ import os, sys
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
+from PIL import Image
 from utils import to_pickle, from_pickle
 
 def get_theta(obs):
@@ -19,16 +20,26 @@ def get_theta(obs):
     theta = theta - 2*np.pi if theta > np.pi else theta
     return theta
     
+
 # def preproc(X, side):
 #     '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-#     X = X[...,0][240:-120,120:-120] - X[...,1][240:-120,120:-120]
-#     return scipy.misc.imresize(X, [int(side/2), side]) / 255.
+#     # crops, removes arrow, and makes single dimensional
+#     X = X[...,0][220:380,330:-330:-1] - X[...,1][220:380,330:-330:-1]
+#     # convert to Image format and resize
+#     im = Image.fromarray(X)
+#     im = im.resize((int(side), int(side)), Image.BICUBIC)
+#     # convert to array and normalize
+#     im = np.asarray(im)
+#     im = im/(im.max() - im.min()) - 0.5
 
+#     return im
 
 def preproc(X, side):
     '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-    X = X[...,0][440:-220,330:-330] - X[...,1][440:-220,330:-330]
-    return scipy.misc.imresize(X, [int(side), side]) / 255.
+    X = X[...,0][220:380,330:-330:-1] - X[...,1][220:380,330:-330:-1]
+    im = Image.fromarray(X).resize((int(side), int(side)), Image.BICUBIC)
+    im = np.asarray(im) / 255.
+    return im
 
 def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6, 
               verbose=False, env_name='Pendulum-v0'):
@@ -131,7 +142,7 @@ def get_dataset(experiment_name, save_dir, **kwargs):
     env_name = "Acrobot-v1"
   else:
     assert experiment_name in ['pendulum']
-
+    
   path = '{}/{}-pixels-dataset.pkl'.format(save_dir, experiment_name)
 
   try:
@@ -157,3 +168,9 @@ def dynamics_fn(t, coords):
   dqdt, dpdt = np.split(dcoords,2)
   S = -np.concatenate([dpdt, -dqdt], axis=-1)
   return S
+
+def lag_energy_fn(coords):
+  k = 4.  # this coefficient must be fit to the data
+  q, dq = np.split(coords,2)
+  H = k*(1-np.cos(q)) + dq**2/2. # pendulum hamiltonian
+  return H

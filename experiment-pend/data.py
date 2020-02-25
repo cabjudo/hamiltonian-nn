@@ -7,16 +7,72 @@ import autograd.numpy as np
 import scipy.integrate
 solve_ivp = scipy.integrate.solve_ivp
 
+import constants
+
+def inertia_matrix():
+    '''
+    I = m * l**2
+    '''
+    I = constants.m * constants.l**2
+    return I
+
+def dissipative_force(dq, momentum=False):
+    I = inertia_matrix()    
+    if momentum:
+        # variable q_dot has the value for p instead
+        # q_dot = p / (m * l**2)
+        dq = dq / I
+
+    return -constants.gamma * dq
+
+def kinetic_energy(q_dot, momentum=False):
+    '''
+    T = m * l**2 * q_dot**2 / 2.
+    '''
+    I = inertia_matrix()
+    if momentum:
+        # variable q_dot has the value for p instead
+        # q_dot = p / (m * l**2)
+        q_dot = q_dot / I
+
+    T = I * q_dot**2 / 2.
+    return T
+
+def potential_energy(q, g=3.):
+    '''
+    U = m * g * l * (1 - cos(q))
+    '''
+    U = constants.m * constants.g * constants.l * (1 - np.cos(q))
+    return U
+
 def hamiltonian_fn(coords):
     q, p = np.split(coords,2)
-    H = 3*(1-np.cos(q)) + p**2 # pendulum hamiltonian
+    T = kinetic_energy(p, momentum=True)
+    U = potential_energy(q)
+    H = T + U
     return H
 
 def dynamics_fn(t, coords):
+    q, p = np.split(coords,2)
+    D = dissipative_force(p, momentum=True)
+
     dcoords = autograd.grad(hamiltonian_fn)(coords)
     dqdt, dpdt = np.split(dcoords,2)
+    dqdt -= D
+
     S = np.concatenate([dpdt, -dqdt], axis=-1)
     return S
+
+# def hamiltonian_fn(coords):
+#     q, p = np.split(coords,2)
+#     H = 3*(1-np.cos(q)) + p**2 # pendulum hamiltonian
+#     return H
+
+# def dynamics_fn(t, coords):
+#     dcoords = autograd.grad(hamiltonian_fn)(coords)
+#     dqdt, dpdt = np.split(dcoords,2)
+#     S = np.concatenate([dpdt, -dqdt], axis=-1)
+#     return S
 
 def get_trajectory(t_span=[0,3], timescale=15, radius=None, y0=None, noise_std=0.1, **kwargs):
     t_eval = np.linspace(t_span[0], t_span[1], int(timescale*(t_span[1]-t_span[0])))

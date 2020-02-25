@@ -17,6 +17,7 @@ class HNN(torch.nn.Module):
         self.assume_canonical_coords = assume_canonical_coords
         self.M = self.permutation_tensor(input_dim) # Levi-Civita permutation tensor
         self.field_type = field_type
+        self.input_dim = input_dim
 
     def forward(self, x):
         # traditional forward pass
@@ -51,7 +52,7 @@ class HNN(torch.nn.Module):
 
         if separate_fields:
             return [conservative_field, solenoidal_field]
-
+        
         return conservative_field + solenoidal_field
 
     def permutation_tensor(self,n):

@@ -7,6 +7,7 @@ import imageio, shutil
 import scipy, scipy.misc, scipy.integrate
 solve_ivp = scipy.integrate.solve_ivp
 
+from PIL import Image
 
 def integrate_model(model, t_span, y0, fun=None, **kwargs):
   def default_fun(t, np_x):
@@ -95,8 +96,9 @@ def make_gif(frames, save_dir, name='pendulum', duration=1e-1, pixels=None, divi
         im[divider,:] = 0
         im[divider + 1,:] = 255
         if pixels is not None:
-          im = scipy.misc.imresize(im, pixels)
-        scipy.misc.imsave(temp_dir + '/f_{:04d}.png'.format(i), im)
+          im = Image.fromarray(im)
+          im = np.asarray( im.resize(pixels, Image.BICUBIC) )
+        imageio.imwrite(temp_dir + '/f_{:04d}.png'.format(i), im)
 
     images = []
     for file_name in sorted(os.listdir(temp_dir)):
@@ -110,3 +112,9 @@ def make_gif(frames, save_dir, name='pendulum', duration=1e-1, pixels=None, divi
 
     shutil.rmtree(temp_dir) # remove all the images
     return png_save_path
+
+
+def get_model_parm_nums(model):
+    total = sum([param.nelement() for param in model.parameters()])
+    return total
+  
