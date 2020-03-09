@@ -96,46 +96,153 @@ class MLP_VAE(MLPAutoencoder):
     return x_hat
 
 
-# network definition
-class ConvAutoencoderPair(nn.Module):
+# network definition: HGN 
+class ConvAutoencoder(nn.Module):
     def __init__(self):
-        super(ConvAutoencoderPair, self).__init__()
-        self.conv1 = nn.Conv2d(2, 64, 3, stride=2)
-        self.conv1_bn = nn.BatchNorm2d(64)
-        self.conv2 = nn.Conv2d(64, 128, 3, stride=2)
-        self.conv2_bn = nn.BatchNorm2d(128)
-        self.conv3 = nn.Conv2d(128, 64, 3, stride=2)
+        super(ConvAutoencoder, self).__init__()
+        # The encoder network is a convolutional neural network with 8 layers, 
+        # with 32 filters on the first layer, then 64 filters on each subsequent layer,
+        self.conv1 = nn.Conv2d(2, 32, 3)
+        self.conv1_bn = nn.BatchNorm2d(32)
+        self.conv2 = nn.Conv2d(32, 64, 3)
+        self.conv2_bn = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(64, 64, 3)
         self.conv3_bn = nn.BatchNorm2d(64)
-        self.conv4 = nn.Conv2d(64, 2, 2)
-
-        self.convt1 = nn.ConvTranspose2d(2, 64, 2)
+        self.conv4 = nn.Conv2d(64, 64, 3)
+        self.conv4_bn = nn.BatchNorm2d(64)
+        self.conv5 = nn.Conv2d(64, 64, 3)
+        self.conv5_bn = nn.BatchNorm2d(64)
+        self.conv6 = nn.Conv2d(64, 64, 3)
+        self.conv6_bn = nn.BatchNorm2d(64)
+        self.conv7 = nn.Conv2d(64, 64, 3)
+        self.conv7_bn = nn.BatchNorm2d(64)
+        self.conv8 = nn.Conv2d(64, 48, 3)
+        self.conv8_bn = nn.BatchNorm2d(48)
+        
+        # while in the last layer we have 48 filters. The final encoder transformer
+        # network is a convolutional neural network with 3 layers and 64 filters on each layer. 
+        self.conv9 = nn.Conv2d(48, 64, 3, stride=2) # added stride=2 because our embedding dimension is smaller
+        self.conv9_bn = nn.BatchNorm2d(64)
+        self.conv10 = nn.Conv2d(64, 64, 3)
+        self.conv10_bn = nn.BatchNorm2d(64)
+        self.conv11 = nn.Conv2d(64, 2, 3)
+        
+        
+        self.convt1 = nn.ConvTranspose2d(2, 64, 3)
         self.convt1_bn = nn.BatchNorm2d(64)
-        self.convt2 = nn.ConvTranspose2d(64, 128, 4, stride=2)
-        self.convt2_bn = nn.BatchNorm2d(128)
-        self.convt3 = nn.ConvTranspose2d(128, 64, 3, stride=2)
-        self.convt3_bn = nn.BatchNorm2d(64)
-        self.convt4 = nn.ConvTranspose2d(64, 2, 4, stride=2)
+        self.convt2 = nn.ConvTranspose2d(64, 64, 3)
+        self.convt2_bn = nn.BatchNorm2d(64)
+        self.convt3 = nn.ConvTranspose2d(64, 48, 3)
+        self.convt3_bn = nn.BatchNorm2d(48)
+        
+        self.convt4 = nn.ConvTranspose2d(48, 64, 2, stride=2)
+        self.convt4_bn = nn.BatchNorm2d(64)
+        self.convt5 = nn.ConvTranspose2d(64, 64, 3)
+        self.convt5_bn = nn.BatchNorm2d(64)
+        self.convt6 = nn.ConvTranspose2d(64, 64, 3)
+        self.convt6_bn = nn.BatchNorm2d(64)
+        self.convt7 = nn.ConvTranspose2d(64, 64, 3)
+        self.convt7_bn = nn.BatchNorm2d(64)
+        self.convt8 = nn.ConvTranspose2d(64, 64, 3)
+        self.convt8_bn = nn.BatchNorm2d(64)
+        self.convt9 = nn.ConvTranspose2d(64, 64, 3)
+        self.convt9_bn = nn.BatchNorm2d(64)
+        self.convt10 = nn.ConvTranspose2d(64, 64, 3)
+        self.convt10_bn = nn.BatchNorm2d(64)
+        self.convt11 = nn.ConvTranspose2d(64, 2, 3)
 
     def encode(self, x):
         # encode
         z = self.conv1(x.view(-1,2,28,28))
         z = F.relu(self.conv1_bn(z))
+        # print(z.shape)
+        
         z = self.conv2(z)
         z = F.relu(self.conv2_bn(z))
+        # print(z.shape)
+        
         z = self.conv3(z)
         z = F.relu(self.conv3_bn(z))
-        z = self.conv4(z).view(-1, 2)
+        # print(z.shape)
+        
+        z = self.conv4(z)
+        z = F.relu(self.conv4_bn(z))
+        # print(z.shape)
+        
+        z = self.conv5(z)
+        z = F.relu(self.conv5_bn(z))
+        # print(z.shape)
+        
+        z = self.conv6(z)
+        z = F.relu(self.conv6_bn(z))
+        # print(z.shape)
+        
+        z = self.conv7(z)
+        z = F.relu(self.conv7_bn(z))
+        # print(z.shape)
+        
+        z = self.conv8(z)
+        z = F.relu(self.conv8_bn(z))
+        # print(z.shape)
+        
+        z = self.conv9(z)
+        z = F.relu(self.conv9_bn(z))
+        # print(z.shape)
+        
+        z = self.conv10(z)
+        z = F.relu(self.conv10_bn(z))
+        # print(z.shape)
+        
+        z = self.conv11(z).view(-1, 2)
+        # print(z.shape)
         return z
 
     def decode(self, z):
         # decode
         x = self.convt1(z.view(-1, 2, 1, 1))
         x = F.relu(self.convt1_bn(x))
+        # print(x.shape)
+        
         x = self.convt2(x)
         x = F.relu(self.convt2_bn(x))
+        # print(x.shape)
+        
         x = self.convt3(x)
         x = F.relu(self.convt3_bn(x))
-        x = torch.tanh(self.convt4(x)).view(-1, 2*28*28)
+        # print(x.shape)
+        
+        x = self.convt4(x)
+        x = F.relu(self.convt4_bn(x))
+        # print(x.shape)
+        
+        x = self.convt5(x)
+        x = F.relu(self.convt5_bn(x))
+        # print(x.shape)
+        
+        x = self.convt6(x)
+        x = F.relu(self.convt6_bn(x))
+        # print(x.shape)
+        
+        x = self.convt7(x)
+        x = F.relu(self.convt7_bn(x))
+        # print(x.shape)
+        
+        x = self.convt8(x)
+        x = F.relu(self.convt8_bn(x))
+        # print(x.shape)
+        
+        x = self.convt9(x)
+        x = F.relu(self.convt9_bn(x))
+        # print(x.shape)
+        
+        x = self.convt10(x)
+        x = F.relu(self.convt10_bn(x))
+        # print(x.shape)
+        
+        x = torch.tanh(self.convt11(x))
+        # print(x.shape)
+        x = x.view(-1, 2*28*28)
+        # print(x.shape)
         
         return x
 
@@ -146,7 +253,7 @@ class ConvAutoencoderPair(nn.Module):
         return x
 
 
-class ConvVAE(ConvAutoencoderPair):
+class ConvVAE(ConvAutoencoder):
   def __init__(self):
     super(ConvVAE, self).__init__()
 

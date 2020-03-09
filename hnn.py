@@ -10,12 +10,12 @@ from utils import rk4
 class HNN(torch.nn.Module):
     '''Learn arbitrary vector fields that are sums of conservative and solenoidal fields'''
     def __init__(self, input_dim, differentiable_model, field_type='solenoidal',
-                    baseline=False, assume_canonical_coords=True):
+                    baseline=False, assume_canonical_coords=True, device=None):
         super(HNN, self).__init__()
         self.baseline = baseline
         self.differentiable_model = differentiable_model
         self.assume_canonical_coords = assume_canonical_coords
-        self.M = self.permutation_tensor(input_dim) # Levi-Civita permutation tensor
+        self.M = self.permutation_tensor(input_dim).to(device) # Levi-Civita permutation tensor
         self.field_type = field_type
         self.input_dim = input_dim
 
@@ -75,14 +75,14 @@ class HNN(torch.nn.Module):
 
 class PixelHNN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, autoencoder,
-                 field_type='solenoidal', nonlinearity='tanh', baseline=False):
+                 field_type='solenoidal', nonlinearity='tanh', baseline=False, device=None):
         super(PixelHNN, self).__init__()
         self.autoencoder = autoencoder
         self.baseline = baseline
 
         output_dim = input_dim if baseline else 2
-        nn_model = MLP(input_dim, hidden_dim, output_dim, nonlinearity)
-        self.hnn = HNN(input_dim, differentiable_model=nn_model, field_type=field_type, baseline=baseline)
+        nn_model = MLP(input_dim, hidden_dim, output_dim, nonlinearity).to(device)
+        self.hnn = HNN(input_dim, differentiable_model=nn_model, field_type=field_type, baseline=baseline, device=device)
 
     def encode(self, x):
         return self.autoencoder.encode(x)

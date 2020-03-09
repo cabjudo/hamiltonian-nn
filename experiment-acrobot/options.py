@@ -9,6 +9,7 @@ def get_args():
     parser = argparse.ArgumentParser(description=None)
     parser.add_argument('--input_dim', default=2*28**2, type=int, help='dimensionality of input tensor')
     parser.add_argument('--hidden_dim', default=200, type=int, help='hidden dimension of mlp')
+    parser.add_argument('--auto_hidden_dim', default=200, type=int, help='hidden dimension of mlp')
     parser.add_argument('--latent_dim', default=4, type=int, help='latent dimension of autoencoder')
     parser.add_argument('--learn_rate', default=1e-3, type=float, help='learning rate')
     parser.add_argument('--input_noise', default=0.0, type=float, help='std of noise added to HNN inputs')
@@ -21,6 +22,7 @@ def get_args():
     parser.add_argument('--baseline', dest='baseline', action='store_true', help='run baseline or experiment?')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--save_dir', default=THIS_DIR, type=str, help='where to save the trained model')
+    parser.add_argument('--gpu', type=int, default=0)
     parser.set_defaults(feature=True)
     return parser.parse_args()
 

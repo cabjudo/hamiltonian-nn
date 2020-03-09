@@ -42,7 +42,7 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
     # the native reset function has high=0.1
     # which doesn't give sufficient dataset diversity
     def reset(env):
-        high = 0.5
+        high = max_angle
         env.env.state = np.random.uniform(low=-high, high=high, size=(4,))
         return env.env._get_ob()
 

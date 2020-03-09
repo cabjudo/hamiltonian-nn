@@ -29,7 +29,7 @@ class SymODEN_R(torch.nn.Module):
 
         self.device = device
         self.assume_canonical_coords = assume_canonical_coords
-        self.M = self.permutation_tensor(input_dim)
+        self.M = self.permutation_tensor(input_dim).to(device)
         self.nfe = 0
         self.input_dim = input_dim
     
@@ -99,7 +99,7 @@ class SymODEN_R(torch.nn.Module):
             for i in range(n): # make asymmetric
                 for j in range(i+1, n):
                     M[i,j] *= -1
-        return M.to(self.device)
+        return M
 
 
 class SymODEN_T(torch.nn.Module):
@@ -314,14 +314,14 @@ class SymODEN_R1_T1(torch.nn.Module):
             return torch.cat((dx, -sin_q * dq, cos_q * dq, ddq, zero_vec), dim=1)
 
 class PixelSymODEN_R(torch.nn.Module):
-    def __init__(self, dim, autoencoder, nonlinearity='tanh', dt=1e-3):
+    def __init__(self, dim, autoencoder, nonlinearity='tanh', dt=1e-3, M_hidden=300, V_hidden=50, g_hidden=200, device=None):
         super(PixelSymODEN_R, self).__init__()
         self.autoencoder = autoencoder
 
-        M_net = PSD(dim, 300, dim)
-        V_net = MLP(dim, 50, 1)
-        g_net = MLP(dim, 200, dim)
-        self.symoden = SymODEN_R(dim*2, M_net=M_net, V_net=V_net, g_net=g_net, device=None, baseline=False, structure=True)
+        M_net = PSD(dim, M_hidden, dim).to(device)
+        V_net = MLP(dim, V_hidden, 1).to(device)
+        g_net = MLP(dim, g_hidden, dim).to(device)
+        self.symoden = SymODEN_R(dim*2, M_net=M_net, V_net=V_net, g_net=g_net, device=device, baseline=False, structure=True)
 
     def encode(self, x):
         return self.autoencoder.encode(x)

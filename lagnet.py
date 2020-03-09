@@ -21,12 +21,13 @@ class Lagrangian(nn.Module):
     that is the current configuration and velocity
     The output is the update (dq, ddq)
     '''
-    def __init__(self, dim=1, S_net=None, U_net=None, dt=1e-3):
+    def __init__(self, dim=1, S_net=None, U_net=None, dt=1e-3, device=None):
         # , hidden_dim=140
         super(Lagrangian, self).__init__()
         self.dt = dt
         self.dim = dim
-        self.delta_q = torch.eye(self.dim) * self.dt
+        self.delta_q = (torch.eye(self.dim) * self.dt).to(device)
+        self.device = device
 
         # mapping from configuration
         # to matrix used in computation of inertia matrix
@@ -65,7 +66,7 @@ class Lagrangian(nn.Module):
         '''
         # Bx1xDxD
         A = self.S(q).view(-1, 1, self.dim, self.dim)
-        I = torch.eye(self.dim).unsqueeze(0) * self.dim
+        I = torch.eye(self.dim).unsqueeze(0).to(self.device) * self.dim
         J = torch.einsum('blrc,blkc->brk', A, A) + I
         return J.unsqueeze(1) # Bx1xDxD
 
@@ -176,12 +177,12 @@ class Lagrangian(nn.Module):
 
 
 class LagrangianFriction(Lagrangian):
-    def __init__(self, dim=1, dt=1e-3):
-        super(LagrangianFriction, self).__init__(dim=dim, dt=dt)
+    def __init__(self, dim=1, dt=1e-3, device=None):
+        super(LagrangianFriction, self).__init__(dim=dim, dt=dt, device=device)
 
         self.friction = nn.Sequential(
             nn.Linear(self.dim, 1, bias=None),
-        ) # Bx1x1
+        ).to(device) # Bx1x1
 
         # initialize weights
         for m in self.friction.modules():
@@ -223,13 +224,13 @@ class LagrangianFriction(Lagrangian):
 
 
 class PixelLagrangian(torch.nn.Module):
-    def __init__(self, dim, hidden_dim, autoencoder, nonlinearity='tanh', dt=1e-3):
+    def __init__(self, dim, hidden_dim, autoencoder, nonlinearity='tanh', dt=1e-3, device=None):
         super(PixelLagrangian, self).__init__()
         self.autoencoder = autoencoder
 
-        S_net = MLP(dim, hidden_dim, dim**2, nonlinearity)
-        U_net = MLP(dim, hidden_dim, 1, nonlinearity)
-        self.lag = Lagrangian(dim, S_net, U_net, dt=1e-3)
+        S_net = MLP(dim, hidden_dim, dim**2, nonlinearity).to(device)
+        U_net = MLP(dim, hidden_dim, 1, nonlinearity).to(device)
+        self.lag = Lagrangian(dim, S_net, U_net, dt=dt, device=device)
 
     def encode(self, x):
         return self.autoencoder.encode(x)

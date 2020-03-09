@@ -13,43 +13,40 @@ from PIL import Image
 from utils import to_pickle, from_pickle
 
 def get_theta(obs):
-    '''Transforms coordinate basis from the defaults of the gym pendulum env.'''
-    theta = np.arctan2(obs[0], -obs[1])
-    theta = theta + np.pi/2
+    '''
+    In acrobot environment theta 0 is pointing down which is 
+    consistent with defaults for hnn
+    '''
+    theta = np.arctan2(obs[1], obs[0])
     theta = theta + 2*np.pi if theta < -np.pi else theta
     theta = theta - 2*np.pi if theta > np.pi else theta
     return theta
-    
-
-# def preproc(X, side):
-#     '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-#     # crops, removes arrow, and makes single dimensional
-#     X = X[...,0][220:380,330:-330:-1] - X[...,1][220:380,330:-330:-1]
-#     # convert to Image format and resize
-#     im = Image.fromarray(X)
-#     im = im.resize((int(side), int(side)), Image.BICUBIC)
-#     # convert to array and normalize
-#     im = np.asarray(im)
-#     im = im/(im.max() - im.min()) - 0.5
-
-#     return im
 
 def preproc(X, side):
     '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-    X = X[...,0][220:380,330:-330:-1] - X[...,1][220:380,330:-330:-1]
+    X = X[200:,100:400,0] - X[200:,100:400,1]
     im = Image.fromarray(X).resize((int(side), int(side)), Image.BICUBIC)
     im = np.asarray(im) / 255.
     return im
 
 def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6, 
-              verbose=False, env_name='Pendulum-v0'):
+              verbose=False, env_name='Acrobot-v1'):
 
     gym_settings = locals()
     if verbose:
-        print("Making a dataset of pendulum pixel observations.")
+        print("Making a dataset of acrobot pixel observations.")
         print("Edit 5/20/19: you may have to rewrite the `preproc` function depending on your screen size.")
     env = gym.make(env_name)
-    env.reset() ; env.seed(seed)
+    env.reset()
+
+    # the native reset function has high=0.1
+    # which doesn't give sufficient dataset diversity
+    def reset(env):
+        high = max_angle
+        env.env.state = np.random.uniform(low=-high, high=high, size=(4,))
+        return env.env._get_ob()
+
+    reset(env); env.seed(seed)
 
     canonical_coords, frames = [], []
     for step in range(trials*timesteps):
@@ -58,8 +55,10 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
             angle_ok = False
 
             while not angle_ok:
-                obs = env.reset()
-                theta_init = np.abs(get_theta(obs))
+                env.reset()
+                obs = reset(env)# env.reset()
+                # only checks the first angle
+                theta_init = np.abs(get_theta(obs[0:2]))
                 if verbose:
                     print("\tCalled reset. Max angle= {:.3f}".format(theta_init))
                 if theta_init > min_angle and theta_init < max_angle:
@@ -69,14 +68,15 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
                 print("\tRunning environment...")
                 
         frames.append(preproc(env.render('rgb_array'), side))
-        obs, _, _, _ = env.step([0.])
-        theta, dtheta = get_theta(obs), obs[-1]
+        obs, _, _, _ = env.step(1)
+        theta1, dtheta1 = get_theta(obs[0:2]), obs[-2] # theta1
+        theta2, dtheta2 = get_theta(obs[2:4]), obs[-1] # theta2
 
         # The constant factor of 0.25 comes from saying plotting H = PE + KE*c
         # and choosing c such that total energy is as close to constant as
         # possible. It's not perfect, but the best we can do.
-        canonical_coords.append( np.array([theta, 0.25 * dtheta]) )
-    
+        canonical_coords.append( np.array([theta1, theta2, 0.25 * dtheta1, 0.25 * dtheta2]) )
+
     canonical_coords = np.stack(canonical_coords).reshape(trials*timesteps, -1)
     frames = np.stack(frames).reshape(trials*timesteps, -1)
     return canonical_coords, frames, gym_settings
@@ -140,8 +140,10 @@ def get_dataset(experiment_name, save_dir, **kwargs):
     env_name = "Pendulum-v0"
   elif experiment_name == "acrobot":
     env_name = "Acrobot-v1"
+  elif experiment_name == "cartpole":
+    env_name = "CartPole-v0"
   else:
-    assert experiment_name in ['pendulum']
+    assert experiment_name in ['pendulum', 'acrobot', 'cartpole']
 
   path = '{}/{}-pixels-dataset.pkl'.format(save_dir, experiment_name)
 
