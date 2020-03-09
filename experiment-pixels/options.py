@@ -22,6 +22,7 @@ def get_args():
     parser.add_argument('--conv', dest='conv', action='store_true', help='use CNN for autoencoder?')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--save_dir', default=THIS_DIR, type=str, help='where to save the trained model')
+    parser.add_argument('--gpu', type=int, default=0)
     parser.set_defaults(feature=True)
     return parser.parse_args()
 
