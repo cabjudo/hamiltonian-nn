@@ -16,7 +16,7 @@ sys.path.append(PARENT_DIR)
 from itertools import tee
 from tqdm import tqdm
 
-from nn_models import MLPAutoencoder, ConvAutoencoderPair, MLP
+from nn_models import MLPAutoencoder, ConvAutoencoder, MLP
 from symoden import PixelSymODEN_R
 from data import get_dataset
 from utils import L2_loss, get_model_parm_nums
@@ -26,7 +26,7 @@ args = get_args()
 
 '''The loss for this model is a bit complicated, so we'll
     define it in a separate function for clarity.'''
-def pixelhnn_loss(x, x_next, model, return_scalar=True):
+def pixelhnn_loss(x, x_next, model, device, return_scalar=True):
   # encode pixel space -> latent dimension
   z = model.encode(x)
   z_next = model.encode(x_next)
@@ -36,9 +36,9 @@ def pixelhnn_loss(x, x_next, model, return_scalar=True):
   ae_loss = ((x - x_hat)**2).mean(1)
 
   # hnn vector field loss
-  noise = args.input_noise * torch.randn(*z.shape)
+  noise = args.input_noise * torch.randn(*z.shape).to(device)
 
-  u = torch.zeros_like(z[:,0]).unsqueeze(-1)
+  u = torch.zeros_like(z[:,0]).unsqueeze(-1).to(device)
   z_noise = torch.cat((z + noise, u), -1)
   z = torch.cat((z, u), -1)
 
@@ -58,16 +58,18 @@ def train(args):
   torch.manual_seed(args.seed)
   np.random.seed(args.seed)
 
+  device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+
   # init model and optimizer
   if args.conv:
-    autoencoder = ConvAutoencoderPair()
+    autoencoder = ConvAutoencoder().to(device)
   else:
-    autoencoder = MLPAutoencoder(args.input_dim, args.hidden_dim, args.latent_dim, nonlinearity='relu')
+    autoencoder = MLPAutoencoder(args.input_dim, args.hidden_dim, args.latent_dim, nonlinearity='relu').to(device)
 
   model = PixelSymODEN_R(int(args.latent_dim/2), 
                          autoencoder=autoencoder, 
                          nonlinearity=args.nonlinearity,
-                         dt=1e-3)
+                         dt=1e-3, device=device)
   if args.verbose:
     print("Training baseline model:" if args.baseline else "Training HNN model:")
 
@@ -79,10 +81,10 @@ def train(args):
   # get dataset
   data = get_dataset('pendulum', args.save_dir, verbose=True, seed=args.seed)
 
-  x = torch.tensor( data['pixels'], dtype=torch.float32)
-  test_x = torch.tensor( data['test_pixels'], dtype=torch.float32)
-  next_x = torch.tensor( data['next_pixels'], dtype=torch.float32)
-  test_next_x = torch.tensor( data['test_next_pixels'], dtype=torch.float32)
+  x = torch.tensor( data['pixels'], dtype=torch.float32).to(device)
+  test_x = torch.tensor( data['test_pixels'], dtype=torch.float32).to(device)
+  next_x = torch.tensor( data['next_pixels'], dtype=torch.float32).to(device)
+  test_next_x = torch.tensor( data['test_next_pixels'], dtype=torch.float32).to(device)
 
   # vanilla ae train loop
   stats = {'train_loss': [], 'test_loss': []}
@@ -90,7 +92,7 @@ def train(args):
     
     # train step
     ixs = torch.randperm(x.shape[0])[:args.batch_size]
-    loss = pixelhnn_loss(x[ixs], next_x[ixs], model)
+    loss = pixelhnn_loss(x[ixs], next_x[ixs], model, device)
     loss.backward() ; optim.step() ; optim.zero_grad()
 
     stats['train_loss'].append(loss.item())
@@ -110,14 +112,14 @@ def train(args):
   train_ind = list(range(0, x.shape[0], args.batch_size))
   train_ind.append(x.shape[0]-1)
 
-  train_dist1, train_dist2 = tee( pixelhnn_loss(x[i].unsqueeze(0), next_x[i].unsqueeze(0), model).detach().numpy() for i in train_ind )
+  train_dist1, train_dist2 = tee( pixelhnn_loss(x[i].unsqueeze(0), next_x[i].unsqueeze(0), model, device).detach().cpu().numpy() for i in train_ind )
   train_avg = sum(train_dist1) / x.shape[0]
   train_std = sum( (v-train_avg)**2 for v in train_dist2 ) / x.shape[0]
 
   test_ind = list(range(0, test_x.shape[0], args.batch_size))
   test_ind.append(test_x.shape[0]-1)
 
-  test_dist1, test_dist2 = tee( pixelhnn_loss(test_x[i].unsqueeze(0), test_next_x[i].unsqueeze(0), model).detach().numpy() for i in test_ind )
+  test_dist1, test_dist2 = tee( pixelhnn_loss(test_x[i].unsqueeze(0), test_next_x[i].unsqueeze(0), model, device).detach().cpu().numpy() for i in test_ind )
   test_avg = sum(test_dist1) / test_x.shape[0]
   test_std = sum( (v-test_avg)**2 for v in test_dist2 ) / test_x.shape[0]
 
