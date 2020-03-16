@@ -75,13 +75,13 @@ class MLP_VAE(MLPAutoencoder):
     # modify the last layer to output (mu, sigma)
     # linear4 is mu, linear5 is sigma
     # self.linear4 = torch.nn.Linear(hidden_dim, latent_dim)
-    self.linear5 = torch.nn.Linear(hidden_dim, latent_dim)
+    self.linear4a = torch.nn.Linear(hidden_dim, latent_dim)
 
   def encode(self, x):
     h = self.nonlinearity( self.linear1(x) )
     h = h + self.nonlinearity( self.linear2(h) )
     h = h + self.nonlinearity( self.linear3(h) )
-    return self.linear4(h), self.linear5(h)
+    return self.linear4(h), self.linear4a(h)
 
   def reparameterize(self, mu, logvar):
     std = torch.exp(0.5 * logvar)
