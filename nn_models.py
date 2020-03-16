@@ -102,11 +102,11 @@ class ConvAutoencoder(nn.Module):
         super(ConvAutoencoder, self).__init__()
         # The encoder network is a convolutional neural network with 8 layers, 
         # with 32 filters on the first layer, then 64 filters on each subsequent layer,
-        self.conv1 = nn.Conv2d(2, 32, 3)
+        self.conv1 = nn.Conv2d(2, 32, 5)
         self.conv1_bn = nn.BatchNorm2d(32)
-        self.conv2 = nn.Conv2d(32, 64, 3)
+        self.conv2 = nn.Conv2d(32, 64, 5)
         self.conv2_bn = nn.BatchNorm2d(64)
-        self.conv3 = nn.Conv2d(64, 64, 3)
+        self.conv3 = nn.Conv2d(64, 64, 5)
         self.conv3_bn = nn.BatchNorm2d(64)
         self.conv4 = nn.Conv2d(64, 64, 3)
         self.conv4_bn = nn.BatchNorm2d(64)
@@ -116,26 +116,25 @@ class ConvAutoencoder(nn.Module):
         self.conv6_bn = nn.BatchNorm2d(64)
         self.conv7 = nn.Conv2d(64, 64, 3)
         self.conv7_bn = nn.BatchNorm2d(64)
-        self.conv8 = nn.Conv2d(64, 48, 3)
-        self.conv8_bn = nn.BatchNorm2d(48)
+        self.conv8 = nn.Conv2d(64, 64, 3)
+        self.conv8_bn = nn.BatchNorm2d(64) # CHANGED: while in the last layer we have 48 filters. 
         
-        # while in the last layer we have 48 filters. The final encoder transformer
+        # The final encoder transformer
         # network is a convolutional neural network with 3 layers and 64 filters on each layer. 
-        self.conv9 = nn.Conv2d(48, 64, 3, stride=2) # added stride=2 because our embedding dimension is smaller
+        self.conv9 = nn.Conv2d(64, 64, 3) # CHANGED: added stride=2 because our embedding dimension is smaller
         self.conv9_bn = nn.BatchNorm2d(64)
         self.conv10 = nn.Conv2d(64, 64, 3)
         self.conv10_bn = nn.BatchNorm2d(64)
-        self.conv11 = nn.Conv2d(64, 2, 3)
+        self.conv11 = nn.Conv2d(64, 2, 2)
         
-        
-        self.convt1 = nn.ConvTranspose2d(2, 64, 3)
+        self.convt1 = nn.ConvTranspose2d(2, 64, 2)
         self.convt1_bn = nn.BatchNorm2d(64)
         self.convt2 = nn.ConvTranspose2d(64, 64, 3)
         self.convt2_bn = nn.BatchNorm2d(64)
-        self.convt3 = nn.ConvTranspose2d(64, 48, 3)
-        self.convt3_bn = nn.BatchNorm2d(48)
+        self.convt3 = nn.ConvTranspose2d(64, 64, 3) # CHANGED: while in the last layer we have 48 filters.
+        self.convt3_bn = nn.BatchNorm2d(64)
         
-        self.convt4 = nn.ConvTranspose2d(48, 64, 2, stride=2)
+        self.convt4 = nn.ConvTranspose2d(64, 64, 3) # CHANGED: added stride=2 because our embedding dimension is smaller
         self.convt4_bn = nn.BatchNorm2d(64)
         self.convt5 = nn.ConvTranspose2d(64, 64, 3)
         self.convt5_bn = nn.BatchNorm2d(64)
@@ -145,11 +144,11 @@ class ConvAutoencoder(nn.Module):
         self.convt7_bn = nn.BatchNorm2d(64)
         self.convt8 = nn.ConvTranspose2d(64, 64, 3)
         self.convt8_bn = nn.BatchNorm2d(64)
-        self.convt9 = nn.ConvTranspose2d(64, 64, 3)
+        self.convt9 = nn.ConvTranspose2d(64, 64, 5)
         self.convt9_bn = nn.BatchNorm2d(64)
-        self.convt10 = nn.ConvTranspose2d(64, 64, 3)
-        self.convt10_bn = nn.BatchNorm2d(64)
-        self.convt11 = nn.ConvTranspose2d(64, 2, 3)
+        self.convt10 = nn.ConvTranspose2d(64, 32, 5)
+        self.convt10_bn = nn.BatchNorm2d(32)
+        self.convt11 = nn.ConvTranspose2d(32, 2, 5)
 
     def encode(self, x):
         # encode
@@ -243,7 +242,6 @@ class ConvAutoencoder(nn.Module):
         # print(x.shape)
         x = x.view(-1, 2*28*28)
         # print(x.shape)
-        
         return x
 
     def forward(self, x):
