@@ -177,8 +177,8 @@ class Lagrangian(nn.Module):
 
 
 class LagrangianFriction(Lagrangian):
-    def __init__(self, dim=1, dt=1e-3, device=None):
-        super(LagrangianFriction, self).__init__(dim=dim, dt=dt, device=device)
+    def __init__(self, dim=1, S_net=None, U_net=None, dt=1e-3, device=None):
+        super(LagrangianFriction, self).__init__(dim=dim, S_net=S_net, U_net=U_net, dt=dt, device=device)
 
         self.friction = nn.Sequential(
             nn.Linear(self.dim, 1, bias=None),
@@ -230,7 +230,7 @@ class PixelLagrangian(torch.nn.Module):
 
         S_net = MLP(dim, hidden_dim, dim**2, nonlinearity).to(device)
         U_net = MLP(dim, hidden_dim, 1, nonlinearity).to(device)
-        self.lag = Lagrangian(dim, S_net, U_net, dt=dt, device=device)
+        self.lag = LagrangianFriction(dim, S_net, U_net, dt=dt, device=device)
 
     def encode(self, x):
         return self.autoencoder.encode(x)

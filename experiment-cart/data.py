@@ -3,6 +3,7 @@
 
 import numpy as np
 import gym
+import myenv
 import scipy, scipy.misc
 
 import os, sys
@@ -12,53 +13,46 @@ sys.path.append(parent_dir)
 from PIL import Image
 from utils import to_pickle, from_pickle
 
-def get_theta(obs):
-    '''
-    In acrobot environment theta 0 is pointing down which is 
-    consistent with defaults for hnn
-    '''
-    theta = np.arctan2(obs[1], obs[0])
-    theta = theta + 2*np.pi if theta < -np.pi else theta
-    theta = theta - 2*np.pi if theta > np.pi else theta
-    return theta
 
 def preproc(X, side):
     '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-    X = X[200:,100:400,0] - X[200:,100:400,1]
+    X = X[150:-50,:,0] - X[150:-50,:,1]
     im = Image.fromarray(X).resize((int(side), int(side)), Image.BICUBIC)
     im = np.asarray(im) / 255.
     return im
 
-def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6, 
-              verbose=False, env_name='Acrobot-v1'):
-
+def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6, u=[0., 0.], verbose=False, env_name='My_FA_CartPole-v0'): 
+    '''
+    Observation: 
+        Type: Box(4)
+        Num	Observation                 Min         Max
+        0	Cart Position             -4.8            4.8
+        1	Cart Velocity             -Inf            Inf
+        2	Pole Angle                 -24 deg        24 deg
+        3	Pole Velocity At Tip      -Inf            Inf 
+              
+    '''
     gym_settings = locals()
+    gym_settings.pop('u', None)
+
     if verbose:
         print("Making a dataset of acrobot pixel observations.")
         print("Edit 5/20/19: you may have to rewrite the `preproc` function depending on your screen size.")
     env = gym.make(env_name)
     env.reset()
+    env.seed(seed)
 
-    # the native reset function has high=0.1
-    # which doesn't give sufficient dataset diversity
-    def reset(env):
-        high = max_angle
-        env.env.state = np.random.uniform(low=-high, high=high, size=(4,))
-        return env.env._get_ob()
-
-    reset(env); env.seed(seed)
-
-    canonical_coords, frames = [], []
+    canonical_coords, control, frames = [], [], []
     for step in range(trials*timesteps):
 
         if step % timesteps == 0:
             angle_ok = False
 
             while not angle_ok:
-                env.reset()
-                obs = reset(env)# env.reset()
+                obs = env.reset()
+                print(obs)
                 # only checks the first angle
-                theta_init = np.abs(get_theta(obs[0:2]))
+                theta_init = np.abs(obs[2])
                 if verbose:
                     print("\tCalled reset. Max angle= {:.3f}".format(theta_init))
                 if theta_init > min_angle and theta_init < max_angle:
@@ -68,29 +62,31 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
                 print("\tRunning environment...")
                 
         frames.append(preproc(env.render('rgb_array'), side))
-        obs, _, _, _ = env.step(1)
-        theta1, dtheta1 = get_theta(obs[0:2]), obs[-2] # theta1
-        theta2, dtheta2 = get_theta(obs[2:4]), obs[-1] # theta2
+        obs, _, _, _ = env.step(u)
+        pos, vel = obs[0], obs[1] # theta1
+        theta, dtheta = obs[2], obs[3] # theta2
 
         # The constant factor of 0.25 comes from saying plotting H = PE + KE*c
         # and choosing c such that total energy is as close to constant as
         # possible. It's not perfect, but the best we can do.
-        canonical_coords.append( np.array([theta1, theta2, 0.25 * dtheta1, 0.25 * dtheta2]) )
+        canonical_coords.append( np.array([pos, theta, 0.25 * vel, 0.25 * dtheta]) )
+        control.append( u )
 
     canonical_coords = np.stack(canonical_coords).reshape(trials*timesteps, -1)
+    control = np.stack(control).reshape(trials*timesteps, -1)
     frames = np.stack(frames).reshape(trials*timesteps, -1)
-    return canonical_coords, frames, gym_settings
+    return canonical_coords, control, frames, gym_settings
 
 def make_gym_dataset(test_split=0.2, **kwargs):
     '''Constructs a dataset of observations from an OpenAI Gym env'''
-    canonical_coords, frames, gym_settings = sample_gym(**kwargs)
-    
+    canonical_coords, control, frames, gym_settings = sample_gym(**kwargs)
     coords, dcoords = [], [] # position and velocity data (canonical coordinates)
     pixels, dpixels = [], [] # position and velocity data (pixel space)
     next_pixels, next_dpixels = [], [] # (pixel space measurements, 1 timestep in future)
+    ctrls = []
 
     trials = gym_settings['trials']
-    for cc, pix in zip(np.split(canonical_coords, trials), np.split(frames, trials)):
+    for cc, pix, ctrl in zip(np.split(canonical_coords, trials), np.split(frames, trials), np.split(control, trials)):
         # calculate cc offsets
         cc = cc[1:]
         dcc = cc[1:] - cc[:-1]
@@ -113,11 +109,13 @@ def make_gym_dataset(test_split=0.2, **kwargs):
         coords.append(cc) ; dcoords.append(dcc)
         pixels.append(p) ; dpixels.append(dp)
         next_pixels.append(next_p) ; next_dpixels.append(next_dp)
+        ctrls.append(ctrl[2:-1])
 
     # concatenate across trials
     data = {'coords': coords, 'dcoords': dcoords,
             'pixels': pixels, 'dpixels': dpixels, 
-            'next_pixels': next_pixels, 'next_dpixels': next_dpixels}
+            'next_pixels': next_pixels, 'next_dpixels': next_dpixels,
+            'ctrls': ctrls}
     data = {k: np.concatenate(v) for k, v in data.items()}
 
     # make a train/test split
@@ -132,7 +130,7 @@ def make_gym_dataset(test_split=0.2, **kwargs):
 
     return data
 
-def get_dataset(experiment_name, save_dir, **kwargs):
+def get_dataset(experiment_name, save_dir, u, **kwargs):
   '''Returns a dataset bult on top of OpenAI Gym observations. Also constructs
   the dataset if no saved version is available.'''
   
@@ -141,7 +139,7 @@ def get_dataset(experiment_name, save_dir, **kwargs):
   elif experiment_name == "acrobot":
     env_name = "Acrobot-v1"
   elif experiment_name == "cartpole":
-    env_name = "CartPole-v0"
+    env_name = 'My_FA_CartPole-v0'
   else:
     assert experiment_name in ['pendulum', 'acrobot', 'cartpole']
 
@@ -152,7 +150,18 @@ def get_dataset(experiment_name, save_dir, **kwargs):
       print("Successfully loaded data from {}".format(path))
   except:
       print("Had a problem loading data from {}. Rebuilding dataset...".format(path))
-      data = make_gym_dataset(**kwargs)
+
+      data = {}
+      for u_ in u:
+          data_ = make_gym_dataset(u=u[0], **kwargs)
+          for k, v in data_.items():
+              if k in ['meta']:
+                  continue
+
+              new = data_[k]
+              old = data.get(k, np.array([]).reshape(0,new.shape[1]))
+              data[k] = np.vstack((old, data_[k]))
+
       to_pickle(data, path)
 
   return data

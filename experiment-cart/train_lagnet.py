@@ -27,7 +27,7 @@ args = get_args()
 
 '''The loss for this model is a bit complicated, so we'll
     define it in a separate function for clarity.'''
-def pixelhnn_loss(x, x_next, model, device, return_scalar=True):
+def pixelhnn_loss(x, x_next, ctrl, model, device, return_scalar=True):
   # encode pixel space -> latent dimension
   z = model.encode(x)
   z_next = model.encode(x_next)
@@ -39,9 +39,8 @@ def pixelhnn_loss(x, x_next, model, device, return_scalar=True):
   # hnn vector field loss
   noise = args.input_noise * torch.randn(*z.shape).to(device)
 
-  u = torch.zeros_like(z[:,:2])
-  z_noise = torch.cat((z + noise, u), -1)
-  z = torch.cat((z, u), -1)
+  z_noise = torch.cat((z + noise, ctrl), -1)
+  z = torch.cat((z, ctrl), -1)
 
   z_hat_next = z + model.time_derivative(z_noise) # replace with rk4
   # the first quantity in split is int(args.latent_dim/2)
@@ -79,12 +78,17 @@ def train(args):
   optim = torch.optim.Adam(model.parameters(), args.learn_rate, weight_decay=1e-5)
 
   # get dataset
-  data = get_dataset('acrobot', args.save_dir, verbose=True, seed=args.seed)
+  u = [[0.0, 0.0], [0.0, 1.0], [0.0, -1.0], [0.0, 2.0], [0.0, -2.0],
+       [1.0, 0.0], [-1.0, 0.0], [2.0, 0.0], [-2.0, 0.0]]  
+  data = get_dataset('cartpole', args.save_dir, u, verbose=True, seed=args.seed)
 
   x = torch.tensor( data['pixels'], dtype=torch.float32).to(device)
   test_x = torch.tensor( data['test_pixels'], dtype=torch.float32).to(device)
   next_x = torch.tensor( data['next_pixels'], dtype=torch.float32).to(device)
   test_next_x = torch.tensor( data['test_next_pixels'], dtype=torch.float32).to(device)
+  ctrl = torch.tensor( data['ctrls'], dtype=torch.float32).to(device)
+  test_ctrl = torch.tensor( data['test_ctrls'], dtype=torch.float32).to(device)
+
 
   # vanilla ae train loop
   stats = {'train_loss': [], 'test_loss': []}
@@ -92,14 +96,14 @@ def train(args):
     
     # train step
     ixs = torch.randperm(x.shape[0])[:args.batch_size]
-    loss = pixelhnn_loss(x[ixs], next_x[ixs], model, device)
+    loss = pixelhnn_loss(x[ixs], next_x[ixs], ctrl[ixs], model, device)
     loss.backward() ; optim.step() ; optim.zero_grad()
 
     stats['train_loss'].append(loss.item())
     if args.verbose and step % args.print_every == 0:
       # run validation
       test_ixs = torch.randperm(test_x.shape[0])[:args.batch_size]
-      test_loss = pixelhnn_loss(test_x[test_ixs], test_next_x[test_ixs], model, device)
+      test_loss = pixelhnn_loss(test_x[test_ixs], test_next_x[test_ixs], test_ctrl[test_ixs],  model, device)
       stats['test_loss'].append(test_loss.item())
 
       print("step {}, train_loss {:.4e}, test_loss {:.4e}"
@@ -112,14 +116,14 @@ def train(args):
   train_ind = list(range(0, x.shape[0], args.batch_size))
   train_ind.append(x.shape[0]-1)
 
-  train_dist1, train_dist2 = tee( pixelhnn_loss(x[i].unsqueeze(0), next_x[i].unsqueeze(0), model, device).detach().cpu().numpy() for i in train_ind )
+  train_dist1, train_dist2 = tee( pixelhnn_loss(x[i].unsqueeze(0), next_x[i].unsqueeze(0), ctrl[i].unsqueeze(0), model, device).detach().cpu().numpy() for i in train_ind )
   train_avg = sum(train_dist1) / x.shape[0]
   train_std = sum( (v-train_avg)**2 for v in train_dist2 ) / x.shape[0]
 
   test_ind = list(range(0, test_x.shape[0], args.batch_size))
   test_ind.append(test_x.shape[0]-1)
 
-  test_dist1, test_dist2 = tee( pixelhnn_loss(test_x[i].unsqueeze(0), test_next_x[i].unsqueeze(0), model, device).detach().cpu().numpy() for i in test_ind )
+  test_dist1, test_dist2 = tee( pixelhnn_loss(test_x[i].unsqueeze(0), test_next_x[i].unsqueeze(0), test_ctrl[i].unsqueeze(0), model, device).detach().cpu().numpy() for i in test_ind )
   test_avg = sum(test_dist1) / test_x.shape[0]
   test_std = sum( (v-test_avg)**2 for v in test_dist2 ) / test_x.shape[0]
 
