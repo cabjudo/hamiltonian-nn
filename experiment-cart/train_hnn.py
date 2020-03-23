@@ -75,12 +75,16 @@ def train(args):
   optim = torch.optim.Adam(model.parameters(), args.learn_rate, weight_decay=1e-5)
 
   # get dataset
-  data = get_dataset('acrobot', args.save_dir, verbose=True, seed=args.seed)
+  u = [[0.0, 0.0], [0.0, 1.0], [0.0, -1.0], [0.0, 2.0], [0.0, -2.0],
+       [1.0, 0.0], [-1.0, 0.0], [2.0, 0.0], [-2.0, 0.0]]  
+  data = get_dataset('cartpole', args.save_dir, u, verbose=True, seed=args.seed)
 
   x = torch.tensor( data['pixels'], dtype=torch.float32).to(device)
   test_x = torch.tensor( data['test_pixels'], dtype=torch.float32).to(device)
   next_x = torch.tensor( data['next_pixels'], dtype=torch.float32).to(device)
   test_next_x = torch.tensor( data['test_next_pixels'], dtype=torch.float32).to(device)
+  ctrl = torch.tensor( data['ctrls'], dtype=torch.float32).to(device)
+  test_ctrl = torch.tensor( data['test_ctrls'], dtype=torch.float32).to(device)
 
   # vanilla ae train loop
   stats = {'train_loss': [], 'test_loss': []}
