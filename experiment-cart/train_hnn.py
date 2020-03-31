@@ -58,7 +58,10 @@ def train(args):
   torch.manual_seed(args.seed)
   np.random.seed(args.seed)
 
-  device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+  if args.gpu == -1:
+    device = 'cpu'
+  else:
+    device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
   
   # init model and optimizer
   autoencoder = MLPAutoencoder(args.input_dim, args.hidden_dim, args.latent_dim,
