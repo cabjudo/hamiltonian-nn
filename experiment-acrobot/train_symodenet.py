@@ -64,7 +64,7 @@ def train(args):
   autoencoder = MLPAutoencoder(args.input_dim, args.auto_hidden_dim, args.latent_dim,
                                nonlinearity='relu').to(device)
   model = PixelSymODEN_R(int(args.latent_dim/2), autoencoder=autoencoder, nonlinearity=args.nonlinearity,
-                         dt=1e-3, M_hidden=args.hidden_dim, V_hidden=args.hidden_dim, g_hidden=args.hidden, device=device)
+                         dt=1e-3, M_hidden=args.hidden_dim, V_hidden=args.hidden_dim, g_hidden=args.hidden_dim, device=device)
   if args.verbose:
     print("Training baseline model:" if args.baseline else "Training HNN model:")
 
