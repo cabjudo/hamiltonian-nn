@@ -16,7 +16,7 @@ sys.path.append(PARENT_DIR)
 from itertools import tee
 from tqdm import tqdm
 
-from nn_models import MLPAutoencoder, ConvAutoencoder, MLP
+from nn_models import MLP_VAE, ConvAutoencoder, MLP
 from lagnet import PixelLagrangian
 from data import get_dataset
 from utils import L2_loss, get_model_parm_nums
@@ -29,11 +29,14 @@ args = get_args()
     define it in a separate function for clarity.'''
 def pixelhnn_loss(x, x_next, model, device, return_scalar=True):
   # encode pixel space -> latent dimension
-  z = model.encode(x)
-  z_next = model.encode(x_next)
+  mu, logvar = model.autoencoder.encode(x)
+  mu_next, logvar_next = model.autoencoder.encode(x_next)
+
+  z = model.autoencoder.reparameterize(mu, logvar)
+  z_next = model.autoencoder.reparameterize(mu_next, logvar_next)
 
   # autoencoder loss
-  x_hat = model.decode(z)
+  x_hat = model.autoencoder.decode(z)
   ae_loss = ((x - x_hat)**2).mean(1)
 
   # hnn vector field loss
@@ -65,7 +68,7 @@ def train(args):
   if args.conv:
     autoencoder = ConvAutoencoder().to(device)
   else:
-    autoencoder = MLPAutoencoder(args.input_dim, args.hidden_dim, args.latent_dim, nonlinearity='relu').to(device)
+    autoencoder = MLP_VAE(args.input_dim, args.hidden_dim, args.latent_dim, nonlinearity='relu').to(device)
 
   model = PixelLagrangian(int(args.latent_dim/2), 
                           hidden_dim=140,

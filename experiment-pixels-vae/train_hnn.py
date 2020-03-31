@@ -97,10 +97,6 @@ def train(args):
     loss.backward() ; optim.step() ; optim.zero_grad()
 
     stats['train_loss'].append(loss.item())
-
-    if step % args.print_every == 0:
-      print("iter: {}, training loss: {}".format(step,loss))
-
     if args.verbose and step % args.print_every == 0:
       # run validation
       test_ixs = torch.randperm(test_x.shape[0])[:args.batch_size]
