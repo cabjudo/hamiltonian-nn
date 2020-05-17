@@ -9,6 +9,8 @@ import os, sys
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
+from os import path
+
 from PIL import Image
 from utils import to_pickle, from_pickle
 
@@ -19,32 +21,43 @@ def get_theta(obs):
     theta = theta + 2*np.pi if theta < -np.pi else theta
     theta = theta - 2*np.pi if theta > np.pi else theta
     return theta
-    
-
-# def preproc(X, side):
-#     '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-#     # crops, removes arrow, and makes single dimensional
-#     X = X[...,0][220:380,330:-330:-1] - X[...,1][220:380,330:-330:-1]
-#     # convert to Image format and resize
-#     im = Image.fromarray(X)
-#     im = im.resize((int(side), int(side)), Image.BICUBIC)
-#     # convert to array and normalize
-#     im = np.asarray(im)
-#     im = im/(im.max() - im.min()) - 0.5
-
-#     return im
 
 def preproc(X, side):
-    '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-    X = X[...,0][220:380,330:-330:-1] - X[...,1][220:380,330:-330:-1]
-    im = Image.fromarray(X).resize((int(side), int(side)), Image.BICUBIC)
-    im = np.asarray(im) / 255.
+    '''desaturates, etc. the rgb pendulum observation.'''
+    X = np.abs(X[...,0] - X[...,1])
+    im = X / X.max()
     return im
 
-def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6, 
+def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=2.*np.pi/6., 
               verbose=False, env_name='Pendulum-v0'):
 
     gym_settings = locals()
+
+    def render(env, mode='human', side=28):
+        if env.env.viewer is None:
+            from gym.envs.classic_control import rendering
+            env.env.viewer = rendering.Viewer(side, side)
+            env.env.viewer.set_bounds(-1.2, 1.2, -1.2, 1.2)
+            rod = rendering.make_capsule(1, .3)
+            rod.set_color(.8, .3, .3)
+            env.env.pole_transform = rendering.Transform()
+            rod.add_attr(env.env.pole_transform)
+            env.env.viewer.add_geom(rod)
+            axle = rendering.make_circle(.05)
+            axle.set_color(0,0,0)
+            env.env.viewer.add_geom(axle)
+            fname = path.join(path.dirname(__file__), "../assets/clockwise.png")
+            env.env.img = rendering.Image(fname, 1., 1.)
+            env.env.imgtrans = rendering.Transform()
+            env.env.img.add_attr(env.env.imgtrans)
+
+        env.env.viewer.add_onetime(env.env.img)
+        env.env.pole_transform.set_rotation(env.env.state[0] + np.pi/2)
+        if env.env.last_u:
+            env.env.imgtrans.scale = (-env.env.last_u/2, np.abs(env.env.last_u)/2)
+
+        return env.env.viewer.render(return_rgb_array = mode=='rgb_array')
+
     if verbose:
         print("Making a dataset of pendulum pixel observations.")
         print("Edit 5/20/19: you may have to rewrite the `preproc` function depending on your screen size.")
@@ -68,7 +81,7 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
             if verbose:
                 print("\tRunning environment...")
                 
-        frames.append(preproc(env.render('rgb_array'), side))
+        frames.append(preproc(render(env,'rgb_array'), side))
         obs, _, _, _ = env.step([0.])
         theta, dtheta = get_theta(obs), obs[-1]
 

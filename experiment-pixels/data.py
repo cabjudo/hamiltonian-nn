@@ -9,42 +9,176 @@ import os, sys
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
+from os import path
+
 from PIL import Image
 from utils import to_pickle, from_pickle
 
-def get_theta(obs):
+def get_theta_pend(obs):
     '''Transforms coordinate basis from the defaults of the gym pendulum env.'''
     theta = np.arctan2(obs[0], -obs[1])
     theta = theta + np.pi/2
     theta = theta + 2*np.pi if theta < -np.pi else theta
     theta = theta - 2*np.pi if theta > np.pi else theta
     return theta
-    
 
-# def preproc(X, side):
-#     '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-#     # crops, removes arrow, and makes single dimensional
-#     X = X[...,0][220:380,330:-330:-1] - X[...,1][220:380,330:-330:-1]
-#     # convert to Image format and resize
-#     im = Image.fromarray(X)
-#     im = im.resize((int(side), int(side)), Image.BICUBIC)
-#     # convert to array and normalize
-#     im = np.asarray(im)
-#     im = im/(im.max() - im.min()) - 0.5
+def get_theta_acro(obs):
+    '''
+    In acrobot environment theta 0 is pointing down which is 
+    consistent with defaults for hnn
+    '''
+    theta = np.arctan2(obs[1], obs[0])
+    theta = theta + 2*np.pi if theta < -np.pi else theta
+    theta = theta - 2*np.pi if theta > np.pi else theta
+    return theta
 
-#     return im
-
-def preproc(X, side):
+def preproc_acro(X, side):
     '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-    X = X[...,0][220:380,330:-330:-1] - X[...,1][220:380,330:-330:-1]
-    im = Image.fromarray(X).resize((int(side), int(side)), Image.BICUBIC)
-    im = np.asarray(im) / 255.
+    X = np.abs(X[200:,100:400,0] - X[200:,100:400,1])
+    im = np.asarray(Image.fromarray(X).resize((int(side), int(side)), Image.BICUBIC))
+    # im = np.asarray(im) / 255.
+    im = im / im.max()
     return im
 
-def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6, 
-              verbose=False, env_name='Pendulum-v0'):
+# def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6, 
+#               verbose=False, env_name='Pendulum-v0'):
 
+#     gym_settings = locals()
+#     if verbose:
+#         print("Making a dataset of pendulum pixel observations.")
+#         print("Edit 5/20/19: you may have to rewrite the `preproc` function depending on your screen size.")
+#     env = gym.make(env_name)
+#     env.reset() ; env.seed(seed)
+# 
+#     canonical_coords, frames = [], []
+#     for step in range(trials*timesteps):
+# 
+#         if step % timesteps == 0:
+#             angle_ok = False
+# 
+#             while not angle_ok:
+#                 obs = env.reset()
+#                 theta_init = np.abs(get_theta(obs))
+#                 if verbose:
+#                     print("\tCalled reset. Max angle= {:.3f}".format(theta_init))
+#                 if theta_init > min_angle and theta_init < max_angle:
+#                     angle_ok = True
+#                   
+#             if verbose:
+#                 print("\tRunning environment...")
+#                 
+#         frames.append(preproc(env.render('rgb_array'), side))
+#         obs, _, _, _ = env.step([0.])
+#         theta, dtheta = get_theta(obs), obs[-1]
+# 
+#         # The constant factor of 0.25 comes from saying plotting H = PE + KE*c
+#         # and choosing c such that total energy is as close to constant as
+#         # possible. It's not perfect, but the best we can do.
+#         canonical_coords.append( np.array([theta, 0.25 * dtheta]) )
+#     
+#     canonical_coords = np.stack(canonical_coords).reshape(trials*timesteps, -1)
+#     frames = np.stack(frames).reshape(trials*timesteps, -1)
+#     return canonical_coords, frames, gym_settings
+def preproc_pend(X, side):
+    '''desaturates, etc. the rgb pendulum observation.'''
+    X = np.abs(X[...,0] - X[...,1])
+    im = X / X.max()
+    return im
+
+
+def sample_gym(env_name, seed=0, timesteps=23, trials=70, side=28, min_angle=0., max_angle=1.*np.pi/6., 
+              verbose=False):
+    if env_name in ['Pendulum-v0']:
+        return sample_gym_pend(seed=seed, timesteps=timesteps, trials=trials, side=side, min_angle=min_angle, max_angle=max_angle, verbose=verbose)
+    elif env_name in ['Acrobot-v1']:
+        return sample_gym_acro(seed=seed, timesteps=timesteps, trials=trials, side=side, min_angle=min_angle, max_angle=max_angle, verbose=verbose)
+    else:
+        return None
+    
+def sample_gym_acro(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6., 
+              verbose=False):
+
+    env_name='Acrobot-v1'
     gym_settings = locals()
+    if verbose:
+        print("Making a dataset of acrobot pixel observations.")
+        print("Edit 5/20/19: you may have to rewrite the `preproc` function depending on your screen size.")
+    env = gym.make(env_name)
+    env.reset()
+
+    # the native reset function has high=0.1
+    # which doesn't give sufficient dataset diversity
+    def reset(env):
+        high = max_angle
+        env.env.state = np.random.uniform(low=-high, high=high, size=(4,))
+        return env.env._get_ob()
+
+    reset(env); env.seed(seed)
+
+    canonical_coords, frames = [], []
+    for step in range(trials*timesteps):
+
+        if step % timesteps == 0:
+            angle_ok = False
+
+            while not angle_ok:
+                env.reset()
+                obs = reset(env)# env.reset()
+                # only checks the first angle
+                theta_init = np.abs(get_theta_acro(obs[0:2]))
+                if verbose:
+                    print("\tCalled reset. Max angle= {:.3f}".format(theta_init))
+                if theta_init > min_angle and theta_init < max_angle:
+                    angle_ok = True
+                  
+            if verbose:
+                print("\tRunning environment...")
+                
+        frames.append(preproc_acro(env.render('rgb_array'), side))
+        obs, _, _, _ = env.step(1)
+        theta1, dtheta1 = get_theta_acro(obs[0:2]), obs[-2] # theta1
+        theta2, dtheta2 = get_theta_acro(obs[2:4]), obs[-1] # theta2
+
+        # The constant factor of 0.25 comes from saying plotting H = PE + KE*c
+        # and choosing c such that total energy is as close to constant as
+        # possible. It's not perfect, but the best we can do.
+        canonical_coords.append( np.array([theta1, theta2, 0.25 * dtheta1, 0.25 * dtheta2]) )
+
+    canonical_coords = np.stack(canonical_coords).reshape(trials*timesteps, -1)
+    frames = np.stack(frames).reshape(trials*timesteps, -1)
+    return canonical_coords, frames, gym_settings
+
+def sample_gym_pend(seed=0, timesteps=23, trials=200, side=28, min_angle=0., max_angle=1.*np.pi/6., 
+              verbose=False):
+    
+    env_name='Pendulum-v0'
+    gym_settings = locals()
+
+    def render(env, mode='human', side=28):
+        if env.env.viewer is None:
+            from gym.envs.classic_control import rendering
+            env.env.viewer = rendering.Viewer(side, side)
+            env.env.viewer.set_bounds(-1.2, 1.2, -1.2, 1.2)
+            rod = rendering.make_capsule(1, .3)
+            rod.set_color(.8, .3, .3)
+            env.env.pole_transform = rendering.Transform()
+            rod.add_attr(env.env.pole_transform)
+            env.env.viewer.add_geom(rod)
+            axle = rendering.make_circle(.05)
+            axle.set_color(0,0,0)
+            env.env.viewer.add_geom(axle)
+            fname = path.join(path.dirname(__file__), "../assets/clockwise.png")
+            env.env.img = rendering.Image(fname, 1., 1.)
+            env.env.imgtrans = rendering.Transform()
+            env.env.img.add_attr(env.env.imgtrans)
+
+        env.env.viewer.add_onetime(env.env.img)
+        env.env.pole_transform.set_rotation(env.env.state[0] + np.pi/2)
+        if env.env.last_u:
+            env.env.imgtrans.scale = (-env.env.last_u/2, np.abs(env.env.last_u)/2)
+
+        return env.env.viewer.render(return_rgb_array = mode=='rgb_array')
+
     if verbose:
         print("Making a dataset of pendulum pixel observations.")
         print("Edit 5/20/19: you may have to rewrite the `preproc` function depending on your screen size.")
@@ -59,7 +193,7 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
 
             while not angle_ok:
                 obs = env.reset()
-                theta_init = np.abs(get_theta(obs))
+                theta_init = np.abs(get_theta_pend(obs))
                 if verbose:
                     print("\tCalled reset. Max angle= {:.3f}".format(theta_init))
                 if theta_init > min_angle and theta_init < max_angle:
@@ -68,9 +202,9 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
             if verbose:
                 print("\tRunning environment...")
                 
-        frames.append(preproc(env.render('rgb_array'), side))
+        frames.append(preproc_pend(render(env,'rgb_array'), side))
         obs, _, _, _ = env.step([0.])
-        theta, dtheta = get_theta(obs), obs[-1]
+        theta, dtheta = get_theta_pend(obs), obs[-1]
 
         # The constant factor of 0.25 comes from saying plotting H = PE + KE*c
         # and choosing c such that total energy is as close to constant as
@@ -81,9 +215,9 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
     frames = np.stack(frames).reshape(trials*timesteps, -1)
     return canonical_coords, frames, gym_settings
 
-def make_gym_dataset(test_split=0.2, **kwargs):
+def make_gym_dataset(env_name, test_split=0.2, **kwargs):
     '''Constructs a dataset of observations from an OpenAI Gym env'''
-    canonical_coords, frames, gym_settings = sample_gym(**kwargs)
+    canonical_coords, frames, gym_settings = sample_gym(env_name, **kwargs)
     
     coords, dcoords = [], [] # position and velocity data (canonical coordinates)
     pixels, dpixels = [], [] # position and velocity data (pixel space)
@@ -132,7 +266,10 @@ def make_gym_dataset(test_split=0.2, **kwargs):
 
     return data
 
-def get_dataset(experiment_name, save_dir, **kwargs):
+def get_dataset(experiment_name, 
+                save_dir, 
+                dataset_filename,
+                **kwargs):
   '''Returns a dataset bult on top of OpenAI Gym observations. Also constructs
   the dataset if no saved version is available.'''
   
@@ -141,16 +278,16 @@ def get_dataset(experiment_name, save_dir, **kwargs):
   elif experiment_name == "acrobot":
     env_name = "Acrobot-v1"
   else:
-    assert experiment_name in ['pendulum']
+    assert experiment_name in ['pendulum', 'acrobot']
     
-  path = '{}/{}-pixels-dataset.pkl'.format(save_dir, experiment_name)
+  path = '{}/{}.pkl'.format(save_dir, dataset_filename)
 
   try:
       data = from_pickle(path)
       print("Successfully loaded data from {}".format(path))
   except:
       print("Had a problem loading data from {}. Rebuilding dataset...".format(path))
-      data = make_gym_dataset(**kwargs)
+      data = make_gym_dataset(env_name=env_name, **kwargs)
       to_pickle(data, path)
 
   return data

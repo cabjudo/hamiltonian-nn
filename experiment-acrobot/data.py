@@ -24,12 +24,13 @@ def get_theta(obs):
 
 def preproc(X, side):
     '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-    X = X[200:,100:400,0] - X[200:,100:400,1]
-    im = Image.fromarray(X).resize((int(side), int(side)), Image.BICUBIC)
-    im = np.asarray(im) / 255.
+    X = np.abs(X[200:,100:400,0] - X[200:,100:400,1])
+    im = np.asarray(Image.fromarray(X).resize((int(side), int(side)), Image.BICUBIC))
+    # im = np.asarray(im) / 255.
+    im = im / im.max()
     return im
 
-def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6, 
+def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6., 
               verbose=False, env_name='Acrobot-v1'):
 
     gym_settings = locals()

@@ -1,4 +1,5 @@
 import argparse
+import numpy as np
 
 import os, sys
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +24,8 @@ def get_args():
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--save_dir', default=THIS_DIR, type=str, help='where to save the trained model')
     parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--max_angle', type=float, default=np.pi/6.)
+    parser.add_argument('--traj_len', type=int, default=103)
     parser.set_defaults(feature=True)
     return parser.parse_args()
 

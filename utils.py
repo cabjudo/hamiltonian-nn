@@ -9,6 +9,7 @@ solve_ivp = scipy.integrate.solve_ivp
 
 from PIL import Image
 
+
 def integrate_model(model, t_span, y0, fun=None, **kwargs):
   def default_fun(t, np_x):
       x = torch.tensor( np_x, requires_grad=True, dtype=torch.float32)
@@ -27,10 +28,6 @@ def rk4(fun, y0, t, dt, *args, **kwargs):
   k4 = fun(y0 + dt * k3, t + dt, *args, **kwargs)
   dy = dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
   return dy
-
-
-def L2_loss(u, v):
-  return (u-v).pow(2).mean()
 
 
 def read_lipson(experiment_name, save_dir):

@@ -9,6 +9,8 @@ import os, sys
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
+from os import path
+
 from PIL import Image
 from utils import to_pickle, from_pickle
 
@@ -22,12 +24,14 @@ def get_theta(obs):
     
 def preproc(X, side):
     '''desaturates, etc. the rgb pendulum observation.'''
-    X = X[...,0] - X[...,1]
-    im = X / 255.
+    X = np.abs(X[...,0] - X[...,1])
+    im = X / X.max()
     return im
 
-def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6, 
+def sample_gym(seed=0, timesteps=23, trials=200, side=28, min_angle=0., max_angle=1.*np.pi/6., 
               verbose=False, env_name='Pendulum-v0'):
+
+    gym_settings = locals()
 
     def render(env, mode='human', side=28):
         if env.env.viewer is None:
@@ -42,7 +46,7 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
             axle = rendering.make_circle(.05)
             axle.set_color(0,0,0)
             env.env.viewer.add_geom(axle)
-            fname = path.join(path.dirname('/home/christine/projects/hamiltonian/lagrangian-nn/'), "assets/clockwise.png")
+            fname = path.join(path.dirname(__file__), "../assets/clockwise.png")
             env.env.img = rendering.Image(fname, 1., 1.)
             env.env.imgtrans = rendering.Transform()
             env.env.img.add_attr(env.env.imgtrans)
@@ -54,8 +58,6 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
 
         return env.env.viewer.render(return_rgb_array = mode=='rgb_array')
 
-
-    gym_settings = locals()
     if verbose:
         print("Making a dataset of pendulum pixel observations.")
         print("Edit 5/20/19: you may have to rewrite the `preproc` function depending on your screen size.")
@@ -154,7 +156,8 @@ def get_dataset(experiment_name, save_dir, **kwargs):
   else:
     assert experiment_name in ['pendulum']
     
-  path = '{}/{}-pixels-dataset.pkl'.format(save_dir, experiment_name)
+  # experiment_name, max_angle, timesteps (trajectory length), trials (batch_size)
+  path = '{}/{}-pixels-dataset-{}-{}-{}.pkl'.format(save_dir, experiment_name, max_angle, timesteps, trials)
 
   try:
       data = from_pickle(path)
@@ -181,7 +184,7 @@ def dynamics_fn(t, coords):
   return S
 
 def lag_energy_fn(coords):
-  k = 4.  # this coefficient must be fit to the data
+  k = 1.9  # this coefficient must be fit to the data
   q, dq = np.split(coords,2)
-  H = k*(1-np.cos(q)) + dq**2/2. # pendulum hamiltonian
+  H = k*(1-np.cos(q)) + k*dq**2/2. # pendulum hamiltonian
   return H

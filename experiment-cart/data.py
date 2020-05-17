@@ -16,9 +16,11 @@ from utils import to_pickle, from_pickle
 
 def preproc(X, side):
     '''Crops, downsamples, desaturates, etc. the rgb pendulum observation.'''
-    X = X[150:-50,:,0] - X[150:-50,:,1]
-    im = Image.fromarray(X).resize((int(side), int(side)), Image.BICUBIC)
-    im = np.asarray(im) / 255.
+    X = np.abs(X[150:,:,0] - X[150:,:,1])
+    # im = Image.fromarray(X).resize((int(side), int(side)), Image.BICUBIC)
+    # im = np.asarray(im) / 255.
+    im = np.asarray(Image.fromarray(X).resize((60, 25), Image.BICUBIC))
+    im = im / im.max()
     return im
 
 def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_angle=np.pi/6, u=[0., 0.], verbose=False, env_name='My_FA_CartPole-v0'): 
@@ -50,7 +52,7 @@ def sample_gym(seed=0, timesteps=103, trials=200, side=28, min_angle=0., max_ang
 
             while not angle_ok:
                 obs = env.reset()
-                print(obs)
+                # print(obs)
                 # only checks the first angle
                 theta_init = np.abs(obs[2])
                 if verbose:

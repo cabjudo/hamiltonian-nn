@@ -16,7 +16,7 @@ sys.path.append(PARENT_DIR)
 from itertools import tee
 from tqdm import tqdm
 
-from nn_models import MLPAutoencoder, ConvAutoencoder, MLP
+from nn_models import MLPAutoencoder, ConvAutoencoder, MLP, MLP_VAE
 from lagnet import PixelLagrangian
 from data import get_dataset
 from utils import L2_loss, get_model_parm_nums
@@ -27,14 +27,14 @@ args = get_args()
 
 '''The loss for this model is a bit complicated, so we'll
     define it in a separate function for clarity.'''
-def pixelhnn_loss(x, x_next, model, device, return_scalar=True):
+def pixelhnn_loss(x, x_next, model, loss, device, return_scalar=True):
   # encode pixel space -> latent dimension
   z = model.encode(x)
   z_next = model.encode(x_next)
-
+  
   # autoencoder loss
   x_hat = model.decode(z)
-  ae_loss = ((x - x_hat)**2).mean(1)
+  ae_loss = loss(x_hat, x).mean(1)
 
   # hnn vector field loss
   noise = args.input_noise * torch.randn(*z.shape).to(device)
@@ -66,6 +66,7 @@ def train(args):
     autoencoder = ConvAutoencoder().to(device)
   else:
     autoencoder = MLPAutoencoder(args.input_dim, args.hidden_dim, args.latent_dim, nonlinearity='relu').to(device)
+    # autoencoder = MLP_VAE(args.input_dim, args.hidden_dim, args.latent_dim, nonlinearity='relu').to(device)
 
   model = PixelLagrangian(int(args.latent_dim/2), 
                           hidden_dim=140,
@@ -89,20 +90,21 @@ def train(args):
   next_x = torch.tensor( data['next_pixels'], dtype=torch.float32).to(device)
   test_next_x = torch.tensor( data['test_next_pixels'], dtype=torch.float32).to(device)
 
+  criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
   # vanilla ae train loop
   stats = {'train_loss': [], 'test_loss': []}
   for step in tqdm(range(args.total_steps+1)):
     
     # train step
     ixs = torch.randperm(x.shape[0])[:args.batch_size]
-    loss = pixelhnn_loss(x[ixs], next_x[ixs], model, device)
+    loss = pixelhnn_loss(x[ixs], next_x[ixs], model, criterion, device)
     loss.backward() ; optim.step() ; optim.zero_grad()
 
     stats['train_loss'].append(loss.item())
     if args.verbose and step % args.print_every == 0:
       # run validation
       test_ixs = torch.randperm(test_x.shape[0])[:args.batch_size]
-      test_loss = pixelhnn_loss(test_x[test_ixs], test_next_x[test_ixs], model, device)
+      test_loss = pixelhnn_loss(test_x[test_ixs], test_next_x[test_ixs], model, criterion, device)
       stats['test_loss'].append(test_loss.item())
 
       print("step {}, train_loss {:.4e}, test_loss {:.4e}"
@@ -115,14 +117,14 @@ def train(args):
   train_ind = list(range(0, x.shape[0], args.batch_size))
   train_ind.append(x.shape[0]-1)
 
-  train_dist1, train_dist2 = tee( pixelhnn_loss(x[i].unsqueeze(0), next_x[i].unsqueeze(0), model, device).detach().cpu().numpy() for i in train_ind )
+  train_dist1, train_dist2 = tee( pixelhnn_loss(x[i].unsqueeze(0), next_x[i].unsqueeze(0), model, criterion, device).detach().cpu().numpy() for i in train_ind )
   train_avg = sum(train_dist1) / x.shape[0]
   train_std = sum( (v-train_avg)**2 for v in train_dist2 ) / x.shape[0]
 
   test_ind = list(range(0, test_x.shape[0], args.batch_size))
   test_ind.append(test_x.shape[0]-1)
 
-  test_dist1, test_dist2 = tee( pixelhnn_loss(test_x[i].unsqueeze(0), test_next_x[i].unsqueeze(0), model, device).detach().cpu().numpy() for i in test_ind )
+  test_dist1, test_dist2 = tee( pixelhnn_loss(test_x[i].unsqueeze(0), test_next_x[i].unsqueeze(0), model, criterion, device).detach().cpu().numpy() for i in test_ind )
   test_avg = sum(test_dist1) / test_x.shape[0]
   test_std = sum( (v-test_avg)**2 for v in test_dist2 ) / test_x.shape[0]
 

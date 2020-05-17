@@ -47,6 +47,7 @@ class MLPAutoencoder(torch.nn.Module):
     for l in [self.linear1, self.linear2, self.linear3, self.linear4, \
               self.linear5, self.linear6, self.linear7, self.linear8]:
       torch.nn.init.orthogonal_(l.weight)  # use a principled initialization
+      # torch.nn.init.xavier_uniform_(l.weight)
 
     self.nonlinearity = choose_nonlinearity(nonlinearity)
 
@@ -73,27 +74,46 @@ class MLP_VAE(MLPAutoencoder):
     super(MLP_VAE, self).__init__(input_dim=input_dim, hidden_dim=hidden_dim, latent_dim=latent_dim, nonlinearity=nonlinearity)
 
     # modify the last layer to output (mu, sigma)
-    # linear4 is mu, linear5 is sigma
+    # linear4 is mu, linear4a is sigma
     # self.linear4 = torch.nn.Linear(hidden_dim, latent_dim)
     self.linear4a = torch.nn.Linear(hidden_dim, latent_dim)
 
-  def encode(self, x):
+  def encode_aux(self, x):
     h = self.nonlinearity( self.linear1(x) )
     h = h + self.nonlinearity( self.linear2(h) )
     h = h + self.nonlinearity( self.linear3(h) )
     return self.linear4(h), self.linear4a(h)
 
-  def reparameterize(self, mu, logvar):
+  def reparameterize(self, mu, logvar, mode='TRAIN'):
     std = torch.exp(0.5 * logvar)
     eps = torch.randn_like(std)
-    return mu + eps * std
+    if mode == 'TRAIN':
+        return mu + eps * std
+    else:
+        return mu
+
+  def encode(self, x, mode='TRAIN'):
+     mu, logvar = self.encode_aux(x)
+     return self.reparameterize(mu, logvar, mode=mode)
   
   def forward(self, x):
-    mu, logvar = self.encode(x)
-    z = self.reparameterize(mu, logvar)
+    z = self.encode(x)
     x_hat = self.decode(z)
-
     return x_hat
+
+class MLP_NF(MLPAutoencoder):
+    def __init__(self, input_dim, hidden_dim, latent_dim, nonlinearity='tanh'):
+        super(MLP_NF, self).__init__(input_dim=input_dim, hidden_dim=hidden_dim, latent_dim=latent_dim, nonlinearity=nonlinearity)
+        
+    def encode_aux(self, x):
+        h = self.nonlinearity( self.linear1(x) )
+        h = h + self.nonlinearity( self.linear2(h) )
+        h = h + self.nonlinearity( self.linear3(h) )
+        return self.linear4(h) # my latent
+    
+    # def 
+
+    pass
 
 
 # network definition: HGN 

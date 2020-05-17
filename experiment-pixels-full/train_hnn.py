@@ -7,6 +7,7 @@ import scipy.integrate
 solve_ivp = scipy.integrate.solve_ivp
 
 import torch, argparse
+from torch.utils.tensorboard import SummaryWriter
 
 import os, sys
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -22,35 +23,8 @@ from data import get_dataset
 from utils import L2_loss, get_model_parm_nums
 from options import get_args
 
-args = get_args()
+import matplotlib.pylab as plt
 
-'''The loss for this model is a bit complicated, so we'll
-    define it in a separate function for clarity.'''
-def pixelhnn_loss(x, x_next, model, device, return_scalar=True):
-  # encode pixel space -> latent dimension
-  z = model.encode(x)
-  z_next = model.encode(x_next)
-
-  # autoencoder loss
-  x_hat = model.decode(z)
-  ae_loss = ((x - x_hat)**2).mean(1)
-
-  # hnn vector field loss
-  noise = args.input_noise * torch.randn(*z.shape).to(device)
-  z_hat_next = z + model.time_derivative(z + noise) # replace with rk4
-  hnn_loss = ((z_next - z_hat_next)**2).mean(1)
-
-  # canonical coordinate loss
-  # -> makes latent space look like (x, v) coordinates
-  w, dw = z.split(1,1)
-  w_next, _ = z_next.split(1,1)
-  cc_loss = ((dw-(w_next - w))**2).mean(1)
-
-  # sum losses and take a gradient step
-  loss = ae_loss + cc_loss + 1e-1 * hnn_loss
-  if return_scalar:
-    return loss.mean()
-  return loss
 
 def train(args):
   # set random seed
@@ -58,6 +32,7 @@ def train(args):
   np.random.seed(args.seed)
 
   device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+  writer = SummaryWriter()
 
   # init model and optimizer
   if args.conv:
@@ -77,31 +52,41 @@ def train(args):
   optim = torch.optim.Adam(model.parameters(), args.learn_rate, weight_decay=1e-5)
 
   # get dataset
-  data = get_dataset('pendulum', args.save_dir, verbose=True, seed=args.seed)
+  data = get_dataset('pendulum', args.save_dir, verbose=True, seed=args.seed, max_angle=args.max_angle, timesteps=args.traj_len, trials=args.batch_size)
 
   x = torch.tensor( data['pixels'], dtype=torch.float32).to(device)
   test_x = torch.tensor( data['test_pixels'], dtype=torch.float32).to(device)
   next_x = torch.tensor( data['next_pixels'], dtype=torch.float32).to(device)
   test_next_x = torch.tensor( data['test_next_pixels'], dtype=torch.float32).to(device)
 
+  criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
   # vanilla ae train loop
   stats = {'train_loss': [], 'test_loss': []}
   for step in tqdm(range(args.total_steps+1)):
     
     # train step
     ixs = torch.randperm(x.shape[0])[:args.batch_size]
-    loss = pixelhnn_loss(x[ixs], next_x[ixs], model, device)
+    loss = model.compute_loss(args, x[ixs], next_x[ixs], criterion, device)
     loss.backward() ; optim.step() ; optim.zero_grad()
 
-    stats['train_loss'].append(loss.item())
-    if args.verbose and step % args.print_every == 0:
+    # stats['train_loss'].append(loss.item())
+    if step % args.print_every == 0:
       # run validation
       test_ixs = torch.randperm(test_x.shape[0])[:args.batch_size]
-      test_loss = pixelhnn_loss(test_x[test_ixs], test_next_x[test_ixs], model)
-      stats['test_loss'].append(test_loss.item())
-
-      print("step {}, train_loss {:.4e}, test_loss {:.4e}"
-        .format(step, loss.item(), test_loss.item()))
+      test_loss = model.compute_loss(args, test_x[test_ixs], test_next_x[test_ixs], criterion, device)
+      # stats['test_loss'].append(test_loss.item())
+      
+      # show latent space
+      fig = plt.figure()
+      k = 1000
+      z = model.encode(x[:k]).detach().cpu().numpy()
+      plt.scatter(z[:,0], z[:,1], c=data['coords'][:k,0], cmap=plt.cm.viridis, s=2)
+        
+      writer.add_scalar('Loss/train', loss.item(), step)
+      writer.add_scalar('Loss/test', test_loss.item(), step)
+      writer.add_figure('Image/latents', fig, step)
+      # print("step {}, train_loss {:.4e}, test_loss {:.4e}"
+      #   .format(step, loss.item(), test_loss.item()))
 
   # this stuff was done because
   # the job kept being killed for memory use
@@ -110,14 +95,14 @@ def train(args):
   train_ind = list(range(0, x.shape[0], args.batch_size))
   train_ind.append(x.shape[0]-1)
 
-  train_dist1, train_dist2 = tee( pixelhnn_loss(x[i].unsqueeze(0), next_x[i].unsqueeze(0), model, device).detach().cpu().numpy() for i in train_ind )
+  train_dist1, train_dist2 = tee( model.compute_loss(args, x[i].unsqueeze(0), next_x[i].unsqueeze(0), criterion, device).detach().cpu().numpy() for i in train_ind )
   train_avg = sum(train_dist1) / x.shape[0]
   train_std = sum( (v-train_avg)**2 for v in train_dist2 ) / x.shape[0]
 
   test_ind = list(range(0, test_x.shape[0], args.batch_size))
   test_ind.append(test_x.shape[0]-1)
 
-  test_dist1, test_dist2 = tee( pixelhnn_loss(test_x[i].unsqueeze(0), test_next_x[i].unsqueeze(0), model, device).detach().cpu().numpy() for i in test_ind )
+  test_dist1, test_dist2 = tee( model.compute_loss(args, test_x[i].unsqueeze(0), test_next_x[i].unsqueeze(0), criterion, device).detach().cpu().numpy() for i in test_ind )
   test_avg = sum(test_dist1) / test_x.shape[0]
   test_std = sum( (v-test_avg)**2 for v in test_dist2 ) / test_x.shape[0]
 
@@ -133,5 +118,6 @@ if __name__ == "__main__":
     os.makedirs(args.save_dir) if not os.path.exists(args.save_dir) else None
     label = 'baseline' if args.baseline else 'hnn'
     if args.conv: label = label + '-conv'
-    path = '{}/{}-pixels-{}.tar'.format(args.save_dir, args.name, label)
+    path = '{}/{}-pixels-{}-{}.tar'.format(args.save_dir, args.name, label, datestring)
     torch.save(model.state_dict(), path)
+    # add path to filename for dataset

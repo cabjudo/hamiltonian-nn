@@ -193,8 +193,6 @@ class LagrangianFriction(Lagrangian):
 
     def time_derivative(self, y):
         q, dq, u = y.unsqueeze(1).split(self.dim, 2)
-        # q = y[:, :self.dim].unsqueeze(1)
-        # dq = y[:, self.dim:].unsqueeze(1)
 
         J = self.J(q)
         coriolis = self.coriolis(J, q, dq)
@@ -209,7 +207,7 @@ class LagrangianFriction(Lagrangian):
         dUdqi = torch.stack([ self.U(q + dqi) - U for dqi in self.delta_q ]).transpose(0,-1).squeeze(0) / self.dt
 
         # Rayleigh dissipation function
-        dFddq_i = torch.stack([ self.friction(dq * dqi) for dqi in self.delta_q ]).transpose(0,-1).squeeze(0) / self.dt
+        dFddq_i = torch.stack([ self.friction(u * dqi) for dqi in self.delta_q ]).transpose(0,-1).squeeze(0) / self.dt
 
         # d/dt dL/ddq - dL/dq = \tau
         # assuming \tau = 0
@@ -218,7 +216,6 @@ class LagrangianFriction(Lagrangian):
 
         du = torch.zeros_like(ddq)
         dy = torch.cat((dq, ddq, du), -1).squeeze(1)
-        # dy = torch.cat((dq, ddq), -1)
 
         return dy
 
